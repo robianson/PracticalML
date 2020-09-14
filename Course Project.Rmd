@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE,cache=TRUE)
 ```
 
 # Practical Machine Learning - Course Project
@@ -18,13 +18,12 @@ We'll be using Human Activity Recognition data from Groupware to train a model t
 set.seed(500)
 training <- read.csv('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv')
 quiz <- read.csv('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv')
-str(training)
 ```
 
 ## Split training data into training and test sets  
-Splitting data into 85% training; 15% validation 
+For validation purposes, we'll split our training data into two sets. We'll use 85% of the data for training (performing some testing and estimating out-of-sample accuracy using k-fold validation), and we'll reserve 15% of our data purely for validation at the end. 
 
-```{r}
+```{r cache = TRUE}
 library(caret)
 inTrain <- createDataPartition(y=training$classe,p=.85,list=FALSE)
 training2 = training[inTrain,]
@@ -32,8 +31,8 @@ testing2 = training[-inTrain,]
 ```
 
 ## Drop Columns
-We're going to drop any columns that are less than 5% informative, and we'll drop the first five columns that contain row identifiers and timestamp information. We'll also set the classe variable and the "new_window" variable as factors. Do this for the training, testing, and quiz sets as applicable. 
-```{r}
+We're going to drop any columns that contain less than 5% informative values (defined as anything other than, NA, 0, or a blank string). We'll also drop the first five columns, which contain unique row identifiers and timestamp information. We'll also set the classe variable and the "new_window" variable as factors. We'll do this for the training, testing, and quiz sets as applicable. 
+```{r cache=TRUE}
 #plot % of non-informative values in each column:
 plot(colMeans(is.na(training2)|training2==0|training2==""),ylab='% Uninformative',xlab='Column No')
 abline(h=.95,col='red',lty=2)
@@ -59,7 +58,7 @@ quiz2$new_window <- as.factor(quiz2$new_window)
 ```
 
 ## Create preprocess object
-We'll create a preprocess object to center, scale, and apply principal component analysis to the columns we've selected. We'll create new variables of the transformed features for the training, testing, and quiz sets. 
+We'll create a preprocess object to center, scale, and apply principal component analysis to the columns we've selected. The reason we do this is to reduce the number of predictors for our random forest algorithm to handle without having to get too far into the weeds about the individual features of our data set. We'll then create new variables containing the transformed features for the training, testing, and quiz sets, which we'll use to train and predict our model. 
 ```{r}
 preproc <- preProcess(training2,method=c('center','scale','pca'),thresh=.9)
 trainingfeatures <- predict(preproc,training2)
@@ -68,7 +67,7 @@ quizfeatures <- predict(preproc,quiz2)
 ```
 
 ## Train the model
-In this chunk we'll train our model. We'll do 10-fold cross validation 3 times. The model we've selected is a Random Forest model. To limit runtime, we'll limit the random forest to 100 trees. 
+In this chunk we'll train our model. The model we've selected is a Random Forest model because that algorithm typically performs well on classification problems without requiring much tuning, although it is computationally intensive. To estimate out-of-sample error and reduce overfitting, we'll do 10-fold cross validation 3 times. To limit runtime, we'll limit the random forest to 100 trees. 
 ```{r cache=TRUE}
 #set 10-fold cross-validation, repeated 3 times
 control <- trainControl(method='repeatedcv',number=10,repeats = 3)
@@ -85,7 +84,13 @@ Testacc <- mean(predict(mdl,testingfeatures)==testingfeatures$classe)
 hist(mdl$resample$Accuracy,main='Histogram of Resampling Accuracy',xlab='Accuracy')
 ```
 
-The final model accuracy on the training set is `r ISacc`. The estimated out-of-sample accuracy based on mean accuracy of the 30 sets (3 repetitions of 10-fold cross-validation) on the training set is `r OSacc`. The accuracy on the 15% test set is `r Testacc`. 
+The final model accuracy on the training set is `r ISacc`. The estimated out-of-sample accuracy based on mean accuracy of the 30 sets (3 repetitions of 10-fold cross-validation) on the training set is `r OSacc`. As can be seen in the chart above, the resample accuracies are clustered tightly around 0.975, with a standard deviation of `r sd(mdl$resample$Accuracy)` The accuracy on the held-out validation set is `r Testacc`, further confirming our estimated out-of-sample accuracy of ~97%. 
+
+Below is a confusion matrix of the model results on the reserved testing set:
+```{r}
+library(caret)
+confusionMatrix(predict(mdl,testingfeatures),testingfeatures$classe)
+```
 
 ## Predict on the quiz set
 ```{r}
