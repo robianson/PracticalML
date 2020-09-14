@@ -1,0 +1,95 @@
+---
+title: "Practical ML Course Project"
+author: "Ian Robinson"
+date: "9/12/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Practical Machine Learning - Course Project
+We'll be using Human Activity Recognition data from Groupware to train a model to recognize the type of exercise performed by a subject based on 160 variables collected by biometric sensors. The training set classifies exercises into 5 categories, represented in the "classe" variable. 
+
+## Load Data and set seed
+
+```{r cache=TRUE}
+set.seed(500)
+training <- read.csv('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv')
+quiz <- read.csv('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv')
+str(training)
+```
+
+## Split training data into training and test sets  
+Splitting data into 85% training; 15% validation 
+
+```{r}
+library(caret)
+inTrain <- createDataPartition(y=training$classe,p=.85,list=FALSE)
+training2 = training[inTrain,]
+testing2 = training[-inTrain,]
+```
+
+## Drop Columns
+We're going to drop any columns that are less than 5% informative, and we'll drop the first five columns that contain row identifiers and timestamp information. We'll also set the classe variable and the "new_window" variable as factors. Do this for the training, testing, and quiz sets as applicable. 
+```{r}
+#plot % of non-informative values in each column:
+plot(colMeans(is.na(training2)|training2==0|training2==""),ylab='% Uninformative',xlab='Column No')
+abline(h=.95,col='red',lty=2)
+text(1,.9,labels='Drop columns above this line',adj=0)
+
+# drop anything that's more than 95% NAs, 0s, and ""'s
+filter <- colMeans(is.na(training2)|training2==0|training2=="")<.95
+training2 <- training2[,filter]
+testing2 <- testing2[,filter]
+quiz2 <- quiz[,filter]
+
+#drop initial 5 columns (individual row identifiers)
+training2 <- training2[,-c(1:5)]
+testing2 <- testing2[,-c(1:5)]
+quiz2 <- quiz2[,-c(1:5)]
+
+#set string columns as factors
+training2$classe <- as.factor(training2$classe)
+testing2$classe <- as.factor(testing2$classe)
+training2$new_window <- as.factor(training2$new_window)
+testing2$new_window <- as.factor(testing2$new_window)
+quiz2$new_window <- as.factor(quiz2$new_window)
+```
+
+## Create preprocess object
+We'll create a preprocess object to center, scale, and apply principal component analysis to the columns we've selected. We'll create new variables of the transformed features for the training, testing, and quiz sets. 
+```{r}
+preproc <- preProcess(training2,method=c('center','scale','pca'),thresh=.9)
+trainingfeatures <- predict(preproc,training2)
+testingfeatures <- predict(preproc,testing2)
+quizfeatures <- predict(preproc,quiz2)
+```
+
+## Train the model
+In this chunk we'll train our model. We'll do 10-fold cross validation 3 times. The model we've selected is a Random Forest model. To limit runtime, we'll limit the random forest to 100 trees. 
+```{r cache=TRUE}
+#set 10-fold cross-validation, repeated 3 times
+control <- trainControl(method='repeatedcv',number=10,repeats = 3)
+#train model
+mdl <- train(classe~.,data=trainingfeatures,method='rf',ntree=100,trControl=control)
+print(mdl)
+```
+
+## Check model in-sample accuracy and test set accuracy
+```{r}
+ISacc <- mean(predict(mdl,trainingfeatures)==trainingfeatures$classe)
+OSacc <- mean(mdl$resample$Accuracy)
+Testacc <- mean(predict(mdl,testingfeatures)==testingfeatures$classe)
+hist(mdl$resample$Accuracy,main='Histogram of Resampling Accuracy',xlab='Accuracy')
+```
+
+The final model accuracy on the training set is `r ISacc`. The estimated out-of-sample accuracy based on mean accuracy of the 30 sets (3 repetitions of 10-fold cross-validation) on the training set is `r OSacc`. The accuracy on the 15% test set is `r Testacc`. 
+
+## Predict on the quiz set
+```{r}
+quizpredictions = predict(mdl,quizfeatures)
+```
+The predictions of the model on the 20 quiz questions are as follows:
+`r quizpredictions`
